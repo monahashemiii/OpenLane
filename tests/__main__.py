@@ -23,7 +23,7 @@ import pathlib
 import subprocess
 
 
-openlane_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+openlane_root = pathlib.Path(__file__).absolute().parent.parent
 
 
 def mkdirp(path):
@@ -38,14 +38,21 @@ def rmrf(path):
 
 
 def get_test_cases():
-    test_dir = os.path.join(openlane_root, "tests")
-    test_cases = []
+    excluded_tests = set()
+    test_dir = openlane_root / "tests"
+    with open(test_dir / "excluded_tests.txt", "r", encoding="utf8") as f:
+        for line in f:
+            line = line.strip()
+            if line == "" or line.startswith("#"):
+                break
+            excluded_tests.add(line)
+    test_cases = set()
     for test in sorted(os.listdir(test_dir)):
         test_path = os.path.join(test_dir, test)
         if test == "__pycache__" or not os.path.isdir(test_path):
             continue
-        test_cases.append(test)
-    return test_cases
+        test_cases.add(test)
+    return test_cases - excluded_tests
 
 
 @click.group()

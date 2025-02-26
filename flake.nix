@@ -22,52 +22,117 @@
   };
 
   inputs = {
-    openlane2.url = github:efabless/openlane2;
+    openlane.url = github:efabless/openlane2;
   };
 
   outputs = {
     self,
-    openlane2,
+    openlane,
     ...
   }: let
-    nix-eda = openlane2.inputs.nix-eda;
-    nixpkgs = openlane2.inputs.nixpkgs;
+    nix-eda = openlane.inputs.nix-eda;
+    nixpkgs = nix-eda.inputs.nixpkgs;
+    lib = nixpkgs.lib;
   in {
-    # Outputs
-    packages =
-      nix-eda.forAllSystems {
-        current = self;
-        withInputs = [nix-eda openlane2.inputs.libparse openlane2.inputs.volare openlane2];
-      } (util:
-        with util; let
-          self =
-            {
-              openroad-abc = pkgs.openroad-abc.override {
-                # openroad-abc-rev-sha
-              };
-              opensta = pkgs.opensta.override {
-                # opensta-rev-sha
-              };
-              openroad = pkgs.openroad.override {
-                # openroad-rev-sha
-                # https://github.com/The-OpenROAD-Project/OpenROAD/discussions/4743
-                openroad-abc = self.openroad-abc;
-                opensta = self.opensta;
-              };
-              magic = pkgs.magic.override {
-                # https://github.com/RTimothyEdwards/magic/issues/317
-                rev = "8.3.478";
-                sha256 = "sha256-aFFKbSqIgpkYjFZfpW3C52N1yQc5+KiLyf5jC16K5UU=";
-              };
-              openlane1 = callPythonPackage ./default.nix {};
-              default = self.openlane1;
-            }
-            // (pkgs.lib.optionalAttrs (pkgs.stdenv.isLinux) {
-              openlane1-docker = callPackage ./docker/docker.nix {
-                createDockerImage = nix-eda.createDockerImage;
-              };
-            });
-        in
-          self);
+    # Common
+    overlays = {
+      default = pkgs': pkgs: let
+        callPackage = lib.callPackageWith pkgs';
+        callPythonPackage = lib.callPackageWith (pkgs' // pkgs'.python3.pkgs);
+      in (
+        {
+          # Versions from 1.0.0 (superstable)
+          yosys-abc = pkgs'.stdenv.mkDerivation {
+            name = "yosys-abc";
+            src = pkgs'.fetchFromGitHub {
+              owner = "YosysHQ";
+              repo = "abc";
+              rev = "bb64142b07794ee685494564471e67365a093710";
+              sha256 = "sha256-nqemGBrP/Zv1YaRPSz1gCdVs7exI9eHCLZ+GU13Yw4c=";
+            };
+
+            nativeBuildInputs = [pkgs'.cmake];
+            buildInputs = [pkgs'.readline];
+
+            installPhase = "mkdir -p $out/bin && mv abc $out/bin";
+          };
+          yosys = (pkgs.yosys.override {
+            version = "14d50a176d59a5eac95a57a01f9e933297251d5b";
+            sha256 = "sha256-ZdtQ3tUEImJGYzN2j4f3fuxYUzTmSx6Vz8U7mLjgZXY=";
+          }).overrideAttrs(self: super: {
+            patches = [];
+            makeFlags = super.makeFlags ++ [
+              "CXX=clang++"
+              "ABC_EXTERNAL=${pkgs'.yosys-abc}/bin/abc"
+              "PREFIX=${placeholder "out"}"
+            ];
+            buildInputs = super.buildInputs ++ [pkgs.readline];
+            meta.license = lib.licenses.gpl3; # readline linked
+          });
+          openroad-abc = pkgs.openroad-abc.override {
+            rev = "95b3543e928640dfa25f9e882e72a090a8883a9c";
+            sha256 = "sha256-U1E9wvEK5G4zo5Pepvsb5q885qSYyixIViweLacO5+U=";
+          };
+          opensta = pkgs.opensta.override {
+            rev = "2609cc89eeb02a06ceca1890624d4fa1932d930b";
+            sha256 = "sha256-7aAFd5ZVBjFKY0ek06jo7T2LNbqXd4kZ9+6z4IldKDE=";
+          };
+          openroad = (pkgs.openroad.override {
+            rev = "41a51eaf4ca2171c92ff38afb91eb37bbd3f36da";
+            sha256 = "sha256-F5Ak1Iim6JjGCh7zmji6vC4Hqv1ZFJ3Om6qXsktwkYA=";
+          }).overrideAttrs(self: super: {
+            patches = [];
+          });
+          
+          # Versions for CI2504
+          magic = pkgs.magic.override {
+            rev = "8.3.519";
+            sha256 = "sha256-dggVBuxvQlWx5BxU1k04Xz1GUGBgd3SefRnz6Qpu1mM=";
+          };
+          netgen = pkgs.netgen.override {
+            rev = "1.5.292";
+            sha256 = "sha256-IGlgrKVHWxWjqrNeYlyUvf+9bjxraPItd0ktPG8ZejY=";
+          };
+          klayout = pkgs.klayout.override {
+            version = "0.29.11";
+            sha256 = "sha256-lWVvuRPqQzlvRprXgz1X9ReSEQt0osLbZNBeV4IcXWY=";
+          };
+          
+          # OpenLane
+          openlane1 = callPythonPackage ./default.nix {};
+          default = self.openlane1;
+        }
+        // (lib.optionalAttrs (pkgs.stdenv.isLinux) {
+          openlane1-docker = callPackage ./docker/docker.nix {
+            createDockerImage = nix-eda.createDockerImage;
+          };
+        })
+      );
+    };
+
+    # Helper functions
+    createOpenLaneShell = import ./nix/create-shell.nix;
+
+    # Packages
+    legacyPackages = nix-eda.forAllSystems (
+      system:
+        import nix-eda.inputs.nixpkgs {
+          inherit system;
+          overlays = [nix-eda.overlays.default openlane.overlays.default self.overlays.default];
+        }
+    );
+
+    packages = nix-eda.forAllSystems (
+      system: let
+        pkgs = self.legacyPackages."${system}";
+      in
+        {
+          inherit (pkgs) openlane1;
+          default = pkgs.openlane1;
+        }
+        // lib.optionalAttrs pkgs.stdenv.isLinux {
+          inherit (pkgs) openlane1-docker;
+        }
+    );
   };
 }

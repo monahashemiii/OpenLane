@@ -25,9 +25,8 @@
   gzip,
   git,
   bash,
-  klayout-pymod,
   yosys,
-  opensta-stable,
+  opensta,
   openroad,
   klayout,
   netgen,
@@ -43,15 +42,15 @@
       click
       pyyaml
       XlsxWriter
-      klayout-pymod
+      klayout.pymod
       volare
     ]);
   pyenv-sitepackages = "${pyenv}/${pyenv.sitePackages}";
 in
-  stdenv.mkDerivation rec {
+  stdenv.mkDerivation (finalAttrs: {
     pname = "openlane1";
-    version = "1.1.1";
-    
+    version = "1.2.0";
+
     src = [
       ./flow.tcl
       ./scripts
@@ -74,7 +73,7 @@ in
 
     includedTools = [
       yosys
-      opensta-stable
+      opensta
       openroad
       klayout
       netgen
@@ -85,7 +84,7 @@ in
     ];
 
     propagatedBuildInputs =
-      includedTools
+      finalAttrs.includedTools
       ++ [
         pyenv
         ncurses
@@ -100,23 +99,23 @@ in
 
     nativeBuildInputs = [makeWrapper];
 
+    computed_PATH = lib.makeBinPath finalAttrs.propagatedBuildInputs;
+    
     installPhase = ''
       mkdir -p $out/bin
       cp -r * $out/bin
       wrapProgram $out/bin/flow.tcl\
-        --set PATH ${lib.makeBinPath propagatedBuildInputs}\
+        --set PATH ${finalAttrs.computed_PATH}\
         --set PYTHONPATH ${pyenv-sitepackages}
     '';
 
     doCheck = true;
 
-    computed_PATH = lib.makeBinPath propagatedBuildInputs;
-
-    meta = with lib; {
+    meta = {
       description = "RTL-to-GDSII flow for application-specific integrated circuits (ASIC)s";
       homepage = "https://efabless.com/openlane";
       mainProgram = "flow.tcl";
-      license = licenses.asl20;
-      platforms = platforms.linux ++ platforms.darwin;
+      license = lib.licenses.asl20;
+      platforms = lib.platforms.linux ++ lib.platforms.darwin;
     };
-  }
+  })

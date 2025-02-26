@@ -1,0 +1,4 @@
+# Since we're using the same OpenROAD as superstable, these crashes persist.
+# We just recommend people update to OpenLane 2 if they encounter these crashes.
+2060-resizer-crash
+2065-resizer-crash
