@@ -52,7 +52,7 @@ def docker_config():
     if cinfo is None:
         raise Exception("No container engine found.")
 
-    if cinfo.engine == "docker":
+    if cinfo.engine == "podman":
         if cinfo.rootless:
             print("-u 0", end="")
         else:
@@ -113,7 +113,7 @@ def issue_survey():
         container_version = vp(os_info.container_info.version)
 
         container_message = "UNSUPPORTED"
-        if "docker" in os_info.container_info.engine:
+        if "podman" in os_info.container_info.engine:
             container_message = "OK"
             minimum_docker_version = vp("19.03.12")
             if container_version < minimum_docker_version:
@@ -235,7 +235,7 @@ def main():
         )
         sys.exit(os.EX_USAGE)
 
-    commands[args[0]]()
+    # commands[args[0]]()
 
 
 if __name__ == "__main__":
